@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Organizer model - authenticated users who create events
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts Account[]
+  sessions Session[]
+  events   Event[]
+
+  @@index([email])
+}
+
+// NextAuth Account model for OAuth providers (extensible)
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// NextAuth Session model
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// NextAuth Verification Token for magic link
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Event model
+model Event {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  description String?   @db.Text
+  imagePath   String?
+  dateTime    DateTime
+  location    String
+  capacity    Int?
+  isPublished Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Organizer relation
+  organizerId String
+  organizer   User   @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+
+  // Relations
+  rsvps              Rsvp[]
+  emailNotifications EmailNotification[]
+
+  @@index([organizerId])
+  @@index([slug])
+  @@index([dateTime])
+}
+
+// RSVP Status enum
+enum RsvpStatus {
+  GOING
+  MAYBE
+  INTERESTED_IN_FUTURE
+  NOT_GOING
+}
+
+// RSVP model
+model Rsvp {
+  id           String     @id @default(cuid())
+  firstName    String
+  lastInitial  String     @db.Char(1)
+  email        String?
+  status       RsvpStatus
+  sessionToken String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // Event relation
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // Optional: link to registered RSVP user
+  rsvpUserId String?
+  rsvpUser   RsvpUser? @relation(fields: [rsvpUserId], references: [id], onDelete: SetNull)
+
+  @@unique([eventId, sessionToken])
+  @@unique([eventId, email])
+  @@index([eventId])
+  @@index([sessionToken])
+  @@index([email])
+}
+
+// RsvpUser - users who provided email and can login to manage RSVPs
+model RsvpUser {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  rsvps              Rsvp[]
+  sessions           RsvpUserSession[]
+  verificationTokens RsvpUserVerificationToken[]
+
+  @@index([email])
+}
+
+// Session for RsvpUser (separate from organizer sessions)
+model RsvpUserSession {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  rsvpUserId   String
+  expires      DateTime
+  rsvpUser     RsvpUser @relation(fields: [rsvpUserId], references: [id], onDelete: Cascade)
+
+  @@index([rsvpUserId])
+}
+
+// Verification token for RsvpUser magic link
+model RsvpUserVerificationToken {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  expires    DateTime
+  rsvpUserId String
+  rsvpUser   RsvpUser @relation(fields: [rsvpUserId], references: [id], onDelete: Cascade)
+
+  @@index([rsvpUserId])
+}
+
+// Email notifications sent by organizers
+model EmailNotification {
+  id        String   @id @default(cuid())
+  subject   String
+  body      String   @db.Text
+  sentAt    DateTime @default(now())
+  sentCount Int      @default(0)
+
+  // Event relation
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+}
